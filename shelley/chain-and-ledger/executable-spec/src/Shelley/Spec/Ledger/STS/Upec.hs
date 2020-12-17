@@ -79,10 +79,14 @@ instance ShelleyBased era => STS (UPEC era) where
         nm
     ]
 
--- | TODO: copy this from module Shelley.Spec.Ledger.STS.Epoch
+-- | If at least @n@ nodes voted to change __the same__ protocol parameters to
+-- __the same__ values, return the given protocol parameters updated to these
+-- values. Here @n@ is the quorum needed.
 votedValue ::
   ProposedPPUpdates era ->
+  -- | Protocol parameters to which the change will be applied.
   PParams era ->
+  -- | Quorum needed to change the protocol parameters.
   Int ->
   Maybe (PParams era)
 votedValue (ProposedPPUpdates pup) pps quorumN =
