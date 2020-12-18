@@ -28,8 +28,9 @@ import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), Tr
 import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
-import Shelley.Spec.Ledger.BaseTypes (Globals (..), ShelleyBase)
-import Shelley.Spec.Ledger.EpochBoundary (SnapShots, emptySnapShots)
+import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
+import Shelley.Spec.Ledger.Coin (Coin (..))
+import Shelley.Spec.Ledger.EpochBoundary (emptySnapShots, obligation)
 import Shelley.Spec.Ledger.LedgerState
   ( EpochState,
     LedgerState,
@@ -44,6 +45,10 @@ import Shelley.Spec.Ledger.LedgerState
     esPrevPp,
     esSnapshots,
     _delegationState,
+    _deposited,
+    _ppups,
+    _reserves,
+    _rewards,
     _utxoState,
     pattern DPState,
     pattern EpochState,
@@ -52,13 +57,10 @@ import Shelley.Spec.Ledger.PParams
   ( emptyPParams,
   )
 import Shelley.Spec.Ledger.Rewards (emptyNonMyopic)
-import Shelley.Spec.Ledger.STS.Newpp (NEWPP, NewppEnv (..), NewppPredicateFailure, NewppState (..))
-import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP, PoolreapPredicateFailure, PoolreapState (..))
-import Shelley.Spec.Ledger.STS.Snap (SNAP, SnapPredicateFailure)
-import Shelley.Spec.Ledger.STS.Upec (UPEC)
+import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP, PoolreapState (..))
+import Shelley.Spec.Ledger.STS.Snap (SNAP)
+import Shelley.Spec.Ledger.STS.Upec (UPEC, UPECState (..))
 import Shelley.Spec.Ledger.Slot (EpochNo)
-
--- ================================================
 
 data EPOCH era
 
@@ -182,7 +184,22 @@ epochTransition = do
           pp
           nm
 
-  trans @(UPEC era) $ TRC ((), epochState', ())
+  UPECState pp' ppupSt' <-
+    trans @(UPEC era) $ TRC (epochState', UPECState pp (_ppups utxoSt'), ())
+  let utxoSt'' = utxoSt' {_ppups = ppupSt'}
+
+  let Coin oblgCurr = obligation pp (_rewards dstate) (_pParams pstate)
+      Coin oblgNew = obligation pp' (_rewards dstate) (_pParams pstate)
+      Coin reserves = _reserves acnt
+      utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
+      acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
+  pure $
+    epochState'
+      { esAccountState = acnt'',
+        esLState = ls {_utxoState = utxoSt'''},
+        esPrevPp = if pp' == pp then pr else pp,
+        esPp = pp'
+      }
 
 instance
   ( UsesTxOut era,

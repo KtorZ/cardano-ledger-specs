@@ -22,7 +22,7 @@ import qualified Data.Map.Strict as Map
 import Control.State.Transition
   (Embed (..), STS (..), TRC (..), judgmentContext, liftSTS, trans)
 import Shelley.Spec.Ledger.LedgerState
-  ( EpochState, pattern EpochState,     esAccountState,     esLState, esPp, esNonMyopic, esSnapshots, esPrevPp,     _utxoState,     _delegationState,     PPUPState (..)    ,_ppups,     pattern DPState)
+  ( EpochState, pattern EpochState,     esAccountState,     esLState ,     _utxoState,     _delegationState,     PPUPState (..)    ,_ppups,     pattern DPState)
 import Shelley.Spec.Ledger.BaseTypes (Globals (..), ShelleyBase)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
 import Shelley.Spec.Ledger.STS.Newpp (NEWPP, NewppEnv (..), NewppState (..))
@@ -33,6 +33,15 @@ import NoThunks.Class (NoThunks (..))
 -- | Update epoch change
 data UPEC era
 
+data UPECState era =
+  UPECState
+  { currentPp :: !(PParams era)
+    -- ^ Current protocol parameters.
+  , ppupState :: !(PPUPState era)
+    -- ^ State of the protocol update transition system.
+  }
+  deriving (Show)
+
 data UpecPredicateFailure era =
   NewPpFailure (PredicateFailure (NEWPP era))
   deriving (Eq, Show, Generic)
@@ -40,23 +49,18 @@ data UpecPredicateFailure era =
 instance NoThunks (UpecPredicateFailure era)
 
 instance ShelleyBased era => STS (UPEC era) where
-  type State (UPEC era) = EpochState era
+  type State (UPEC era) = UPECState era
   type Signal (UPEC era) = ()
-  type Environment (UPEC era) = ()
+  type Environment (UPEC era) = EpochState era
   type BaseM (UPEC era) = ShelleyBase
   type PredicateFailure (UPEC era) = UpecPredicateFailure era
   initialRules = []
   transitionRules = [
     do
-      TRC (_,
-           EpochState
+      TRC (EpochState
            { esAccountState = acnt,
-             esSnapshots = ss,
-             esLState = ls,
-             esPrevPp = _pr,
-             esPp = pp,
-             esNonMyopic = nm
-           }
+             esLState = ls }
+          , UPECState pp ppupSt
           , _
           ) <- judgmentContext
 
@@ -66,17 +70,11 @@ instance ShelleyBased era => STS (UPEC era) where
           DPState dstate pstate = _delegationState ls
           pup = proposals . _ppups $ utxoSt
           ppNew = votedValue pup pp (fromIntegral coreNodeQuorum)
-      NewppState utxoSt' acnt' pp' <-
+      NewppState pp' ppupSt' <-
         trans @(NEWPP era) $
-          TRC (NewppEnv dstate pstate, NewppState utxoSt acnt pp, ppNew)
+          TRC (NewppEnv dstate pstate utxoSt acnt, NewppState pp ppupSt, ppNew)
       pure $
-        EpochState
-        acnt'
-        ss
-        (ls {_utxoState = utxoSt'})
-        pp
-        pp'
-        nm
+        UPECState pp' ppupSt'
     ]
 
 -- | If at least @n@ nodes voted to change __the same__ protocol parameters to
