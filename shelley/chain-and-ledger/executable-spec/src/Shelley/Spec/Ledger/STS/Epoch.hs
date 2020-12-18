@@ -19,14 +19,10 @@ module Shelley.Spec.Ledger.STS.Epoch
   )
 where
 
-import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era (Crypto))
 import Cardano.Ledger.Shelley.Constraints (UsesTxOut, UsesValue)
 import Control.Monad.Trans.Reader (asks)
 import Control.SetAlgebra (eval, (⨃))
-import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), TransitionRule, judgmentContext, trans)
-import qualified Data.Map.Strict as Map
-import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.Coin (Coin (..))
@@ -194,9 +190,7 @@ epochTransition = do
   let Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
       Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
       Coin reserves = _reserves acnt'
-      utxoSt''' =
-        assert (_deposited utxoSt'' == Coin oblgCurr) $
-          utxoSt'' {_deposited = Coin oblgNew}
+      utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
       acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
   pure $
     epochState'
