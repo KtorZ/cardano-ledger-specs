@@ -30,19 +30,25 @@ import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.Coin (Coin (..))
 import Shelley.Spec.Ledger.EpochBoundary (obligation)
 import Shelley.Spec.Ledger.LedgerState
-  ( AccountState, pvCanFollow,
+  ( AccountState,
     DState (..),
+    PPUPState (..),
     PState (..),
-    PPUPState (..)   ,
     UTxOState,
     emptyPPUPState,
+    pvCanFollow,
     totalInstantaneousReservesRewards,
     _deposited,
     _irwd,
     _reserves,
   )
 import Shelley.Spec.Ledger.PParams
-  (PParams, PParams' (..), emptyPParams, ProposedPPUpdates(..), emptyPPPUpdates)
+  ( PParams,
+    PParams' (..),
+    ProposedPPUpdates (..),
+    emptyPPPUpdates,
+    emptyPParams,
+  )
 
 data NEWPP era
 
@@ -75,9 +81,12 @@ initialNewPp =
 
 newPpTransition :: TransitionRule (NEWPP era)
 newPpTransition = do
-  TRC ( NewppEnv dstate pstate utxoSt acnt
-      , NewppState pp ppupSt
-      , ppNew ) <- judgmentContext
+  TRC
+    ( NewppEnv dstate pstate utxoSt acnt,
+      NewppState pp ppupSt,
+      ppNew
+      ) <-
+    judgmentContext
 
   case ppNew of
     Just ppNew' -> do
@@ -97,7 +106,6 @@ newPpTransition = do
         then pure $ NewppState ppNew' (updatePpup ppupSt ppNew')
         else pure $ NewppState pp (updatePpup ppupSt pp)
     Nothing -> pure $ NewppState pp (updatePpup ppupSt pp)
-
 
 -- | Update the protocol parameter updates by clearing out the proposals
 -- and making the future proposals become the new proposals,
