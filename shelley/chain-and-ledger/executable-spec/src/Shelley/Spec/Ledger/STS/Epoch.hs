@@ -30,7 +30,7 @@ import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.Coin (Coin (..))
-import Shelley.Spec.Ledger.EpochBoundary (emptySnapShots, obligation)
+import Shelley.Spec.Ledger.EpochBoundary (SnapShots, emptySnapShots, obligation)
 import Shelley.Spec.Ledger.LedgerState
   ( EpochState,
     LedgerState,
@@ -54,12 +54,14 @@ import Shelley.Spec.Ledger.LedgerState
     pattern EpochState,
   )
 import Shelley.Spec.Ledger.PParams
-  ( emptyPParams,
+  ( PParams,
+    emptyPParams,
   )
 import Shelley.Spec.Ledger.Rewards (emptyNonMyopic)
-import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP, PoolreapState (..))
-import Shelley.Spec.Ledger.STS.Snap (SNAP)
-import Shelley.Spec.Ledger.STS.Upec (UPEC, UPECState (..))
+import Shelley.Spec.Ledger.STS.Newpp (NewppEnv, NewppState)
+import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP, PoolreapPredicateFailure, PoolreapState (..))
+import Shelley.Spec.Ledger.STS.Snap (SNAP, SnapPredicateFailure)
+import Shelley.Spec.Ledger.STS.Upec (UPEC, UPECState (..), UpecPredicateFailure)
 import Shelley.Spec.Ledger.Slot (EpochNo)
 
 data EPOCH era
