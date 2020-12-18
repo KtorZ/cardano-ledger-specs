@@ -199,16 +199,16 @@ epochTransition = do
       pure $
         epochState'
           { esAccountState = acnt'',
-            esLState = ls {_utxoState = utxoSt'''},
+            esLState = (esLState epochState') {_utxoState = utxoSt'''},
             esPrevPp = pp,
             esPp = pp'
           }
     else
       pure $
         epochState'
-          { esLState = ls {_utxoState = utxoSt''},
+          { esLState = (esLState epochState') {_utxoState = utxoSt'}, -- do not update the protocol parameters.
             esPrevPp = pp,
-            esPp = pp'
+            esPp = pp
           }
 
 instance
