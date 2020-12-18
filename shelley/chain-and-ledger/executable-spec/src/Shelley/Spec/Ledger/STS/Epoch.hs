@@ -193,7 +193,7 @@ epochTransition = do
     then do
       let Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
           Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
-          Coin reserves = _reserves acnt
+          Coin reserves = _reserves acnt'
           utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
           acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
       pure $
