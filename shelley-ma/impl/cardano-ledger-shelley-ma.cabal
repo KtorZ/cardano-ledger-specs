@@ -48,6 +48,7 @@ library
     groups,
     mtl,
     nothunks,
+    primitive,
     shelley-spec-ledger,
     small-steps,
     text,

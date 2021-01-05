@@ -39,7 +39,7 @@ import Cardano.Binary
   )
 import qualified Cardano.Crypto.Hash.Class as Hash
 import Cardano.Ledger.Compactible (Compactible (..))
-import qualified Cardano.Ledger.Crypto as CC (Crypto)
+import qualified Cardano.Ledger.Crypto as CC
 import Cardano.Ledger.Torsor (Torsor (..))
 import Cardano.Ledger.Val
   ( DecodeMint (..),
@@ -52,7 +52,11 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (guard)
 import Data.Array (Array)
 import Data.Array.IArray (array)
+import Data.Bits ((.|.))
+import qualified Data.Bits as Bits
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Short as SBS
+import Data.ByteString.Short.Internal (ShortByteString (SBS))
 import Data.CanonicalMaps
   ( canonicalMap,
     canonicalMapUnion,
@@ -67,6 +71,7 @@ import Data.Coders
     (<!),
   )
 import Data.Group (Abelian, Group (..))
+import Data.List (nub)
 import Data.Map.Internal
   ( Map (..),
     link,
@@ -75,12 +80,13 @@ import Data.Map.Internal
   )
 import Data.Map.Strict (assocs)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
+import qualified Data.Primitive.ByteArray as BA
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable (Typeable)
-import Data.Word (Word64)
+import Data.Word (Word16, Word64)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import Shelley.Spec.Ledger.Coin (Coin (..), integerToWord64)
@@ -335,6 +341,85 @@ fromCV (CV w vs) = foldr f (inject . Coin . fromIntegral $ w) vs
   where
     f (CVPart policyId aname amount) acc =
       insert (+) policyId aname (fromIntegral amount) acc
+
+data CompactValue2 crypto
+  = CompactValueAdaOnly {-# UNPACK #-} !Word64
+  | CompactValueMultiAsset
+      {-# UNPACK #-} !Word64 -- ada
+      {-# UNPACK #-} !Word -- number of ma's
+      {-# UNPACK #-} !ShortByteString -- rep
+      {-
+       - The rep consists of three parts
+       - The first part is a sequence of triples (Word16, Word16, Word64),
+       - representing policy id index, asset name index, and quantity.
+       - The second part is a blob of all policy ids.
+       - The third part is the a blob of all asset names.
+       - The pid index and assetid index indicate where the string starts.
+       -
+       - We recover the pid by grabbing the sequence of 28 bytes after the index position.
+       - We recover the asset name by grabbing bytes until the index of the next asset name (or the end of the bytestring)
+       -
+       -
+       -}
+
+from :: forall crypto. (CC.Crypto crypto) => CompactValue2 crypto -> Value crypto
+from (CompactValueAdaOnly c) = Value (fromIntegral c) mempty
+from (CompactValueMultiAsset c numAssets rep) =
+  valueFromList (fromIntegral c) triples
+  where
+    getTripleAtIndex :: Int -> (Word16, Word16, Word64)
+    getTripleAtIndex i =
+      let start = i * 12
+       in ( readWord16 rep start,
+            readWord16 rep (start + 2),
+            readWord64 rep (start + 4)
+          )
+    rawTriples :: [(Word16, Word16, Word64)]
+    rawTriples = map getTripleAtIndex [0 .. (fromIntegral $ numAssets -1)]
+    triples :: [(PolicyID crypto, AssetName, Integer)]
+    triples = map convertTriple rawTriples
+    assetLens =
+      let ixs = nub $ map (\(_, x, _) -> x) rawTriples
+          ixPairs = zip ixs (drop 1 ixs ++ [fromIntegral $ SBS.length rep])
+       in Map.fromList $ (\(a, b) -> (a, fromIntegral $ b - a)) <$> ixPairs
+    assetLen :: Word16 -> Int
+    assetLen ix = fromJust (Map.lookup ix assetLens)
+    convertTriple ::
+      (Word16, Word16, Word64) ->
+      (PolicyID crypto, AssetName, Integer)
+    convertTriple (p, a, i) =
+      ( PolicyID $
+          ScriptHash $
+            Hash.UnsafeHash $
+              readShortByteString
+                rep
+                (fromIntegral p)
+                (fromIntegral $ Hash.sizeHash ([] :: [CC.ADDRHASH crypto])),
+        AssetName $
+          SBS.fromShort $ readShortByteString rep (fromIntegral a) (assetLen a),
+        fromIntegral i
+      )
+
+readWord16 :: ShortByteString -> Int -> Word16
+readWord16 bytes i =
+  Bits.shiftL 8 (fromIntegral $ SBS.index bytes i)
+    .|. (fromIntegral $ SBS.index bytes (i + 1))
+
+readWord64 :: ShortByteString -> Int -> Word64
+readWord64 bytes i =
+        Bits.shiftL 56 (fromIntegral $ SBS.index bytes i)
+    .|. Bits.shiftL 48 (fromIntegral $ SBS.index bytes (i + 1))
+    .|. Bits.shiftL 40 (fromIntegral $ SBS.index bytes (i + 2))
+    .|. Bits.shiftL 32 (fromIntegral $ SBS.index bytes (i + 3))
+    .|. Bits.shiftL 24 (fromIntegral $ SBS.index bytes (i + 4))
+    .|. Bits.shiftL 16 (fromIntegral $ SBS.index bytes (i + 5))
+    .|. Bits.shiftL 8 (fromIntegral $ SBS.index bytes (i + 7))
+    .|. (fromIntegral $ SBS.index bytes (i + 7))
+
+readShortByteString :: ShortByteString -> Int -> Int -> ShortByteString
+readShortByteString (SBS byteArray) start len =
+  let BA.ByteArray res = BA.cloneByteArray (BA.ByteArray byteArray) start len
+   in SBS res
 
 instance CC.Crypto crypto => Torsor (Value crypto) where
   -- TODO a proper torsor form
