@@ -24,6 +24,7 @@ import Data.CanonicalMaps
     canonicalMapUnion,
   )
 import Data.Map.Strict (empty, singleton)
+import Data.Word (Word64)
 import qualified Data.Map.Strict as Map
 import Shelley.Spec.Ledger.Coin (Coin (..))
 import System.IO.Unsafe (unsafePerformIO)
@@ -33,6 +34,7 @@ import Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 import Test.Tasty
 import Test.Tasty.QuickCheck hiding (scale)
 import Prelude hiding (lookup)
+import Cardano.Ledger.Compactible (toCompact, fromCompact)
 
 -- =================================================================================
 -- Alternate implementations of insert to be benchmarked.
@@ -122,24 +124,19 @@ genAssetName = oneof (map return assetChoices)
 genPolicyID :: Gen (PolicyID C_Crypto)
 genPolicyID = oneof (map return policyChoices)
 
-genTriple :: Gen (PolicyID C_Crypto, AssetName, Integer)
-genTriple = (,,) <$> genPolicyID <*> genAssetName <*> choose (-2, 4)
+genTriple :: Gen Integer -> Gen (PolicyID C_Crypto, AssetName, Integer)
+genTriple genAmount = (,,) <$> genPolicyID <*> genAssetName <*> genAmount
 
-genMap :: Gen [(PolicyID C_Crypto, AssetName, Integer)] -- Most maps have 1 or 2 Assets
-genMap =
-  frequency
-    [ (1, vectorOf 0 genTriple),
-      (4, vectorOf 1 genTriple),
-      (5, vectorOf 2 genTriple),
-      (2, vectorOf 3 genTriple),
-      (1, vectorOf 4 genTriple)
-    ]
+genMap :: Gen Integer -> Gen [(PolicyID C_Crypto, AssetName, Integer)] -- Most maps have 1 or 2 Assets
+genMap genAmount = do
+  len <- frequency [(1,pure 0),(4,pure 1),(5,pure 2),(2,pure 3),(1,pure 4)]
+  vectorOf len (genTriple genAmount)
 
-genValue :: Gen (Value C_Crypto)
-genValue = valueFromList <$> genMap <*> choose (-2, 10)
+genValue :: Gen Integer ->  Gen (Value C_Crypto)
+genValue genAmount = valueFromList <$> genMap genAmount <*> genAmount
 
 instance Arbitrary (Value C_Crypto) where
-  arbitrary = genValue
+  arbitrary = genValue (choose (-2,10))
   shrink _ = []
 
 instance Arbitrary AssetName where
@@ -286,6 +283,17 @@ valueGroup =
 valueGroupTests :: TestTree
 valueGroupTests = testGroup "value is a group" (map (\(f, n) -> testProperty n f) valueGroup)
 
+genPositive :: Gen Integer
+genPositive = fmap fromIntegral (arbitrary :: Gen Word64)
+
+compactRoundTrip :: Gen Property
+compactRoundTrip = do
+  v <- genValue genPositive
+  pure (fmap fromCompact (toCompact v) === Just v)
+
+compactTest :: TestTree
+compactTest = testProperty "fromCompact . toCompact == id" compactRoundTrip
+
 -- ===========================================
 -- All the value tests
 
@@ -298,5 +306,6 @@ valTests =
       polyCoinTests,
       polyValueTests,
       monoValueTests,
-      valueGroupTests
+      valueGroupTests,
+      compactTest
     ]
