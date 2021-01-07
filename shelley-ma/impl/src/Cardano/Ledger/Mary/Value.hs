@@ -78,7 +78,7 @@ import Data.Map.Internal
 import Data.Map.Strict (assocs)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust)
-import Data.Ord (comparing)
+import Data.Ord (Down (..), comparing)
 import qualified Data.Primitive.ByteArray as BA
 import Data.Set (Set)
 import Data.Text.Encoding (decodeUtf8)
@@ -306,6 +306,8 @@ data CompactValue crypto
          A) a sequence of Word64s representing quantities
          B) a sequence of Word16s representing policyId indices
          C) Word16s representing asset name indices
+            (as a special case for empty asset names,
+             the index points to the end of the string)
          D) a blob of policyIDs
          E) a blob of asset names
        -}
@@ -333,6 +335,9 @@ from (CompactValueMultiAsset c numAssets rep) =
     rawTriples = map getTripleForIndex [0 .. (fromIntegral $ numAssets -1)]
     triples :: [(PolicyID crypto, AssetName, Integer)]
     triples = map convertTriple rawTriples
+    -- for an index pointing to the end of the array, the associated
+    -- length will be:
+    -- index - arraylength = 0
     assetLens =
       let ixs = nub $ map (\(_, x, _) -> x) rawTriples
           ixPairs = zip ixs (drop 1 ixs ++ [fromIntegral $ SBS.length rep])
@@ -381,19 +386,20 @@ to v = do
             let PolicyID (ScriptHash (Hash.UnsafeHash pidBytes)) = pid
              in BA.copyByteArray
                   byteArray
-                  offset
+                  (fromIntegral offset)
                   (sbsToByteArray pidBytes)
                   0
                   pidSize
-        forM_ (Map.toList assetNameOffsetMap) $ \(AssetName anameBS, offset) ->
-          let anameBytes = SBS.toShort anameBS
-              anameLen = BS.length anameBS
-           in BA.copyByteArray
-                byteArray
-                offset
-                (sbsToByteArray anameBytes)
-                0
-                anameLen
+        forM_ (Map.toList assetNameOffsetMap) $
+          \(AssetName anameBS, offset) ->
+            let anameBytes = SBS.toShort anameBS
+                anameLen = BS.length anameBS
+             in BA.copyByteArray
+                  byteArray
+                  (fromIntegral offset)
+                  (sbsToByteArray anameBytes)
+                  0
+                  anameLen
         byteArrayToSbs <$> BA.unsafeFreezeByteArray byteArray
   where
     (ada, triples) = gettriples v
@@ -402,17 +408,21 @@ to v = do
 
     pidSize = fromIntegral (Hash.sizeHash ([] :: [CC.ADDRHASH crypto]))
     pids = nub $ sort $ (\(pid, _, _) -> pid) <$> triples
+    pidOffsetMap :: Map (PolicyID crypto) Word16
     pidOffsetMap =
       let offsets = enumFromThen initialBlockSize (initialBlockSize + pidSize)
-       in Map.fromList (zip pids offsets)
+       in fromIntegral <$> Map.fromList (zip pids offsets)
     pidOffset pid = fromJust (Map.lookup pid pidOffsetMap)
     pidBlockSize = length pids * pidSize
 
-    assetNames = nub $ sort $ (\(_, an, _) -> an) <$> triples
-    assetNameLengths = BS.length . assetName <$> assetNames
+    -- Putting asset names in (comparing Down) order ensures that the empty string
+    -- is last, so the associated offset is pointing to the end of the array
+    assetNames = nub $ sortBy (comparing Down) $ (\(_, an, _) -> an) <$> triples
+    assetNameLengths = fromIntegral . BS.length . assetName <$> assetNames
+    assetNameOffsetMap :: Map AssetName Word16
     assetNameOffsetMap =
       let offsets = scanl (+) (initialBlockSize + pidBlockSize) assetNameLengths
-       in Map.fromList (zip assetNames offsets)
+       in fromIntegral <$> Map.fromList (zip assetNames offsets)
     assetNameOffset aname = fromJust (Map.lookup aname assetNameOffsetMap)
     anameBlockSize = sum assetNameLengths
 

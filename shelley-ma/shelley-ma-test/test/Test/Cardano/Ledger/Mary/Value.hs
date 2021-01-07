@@ -286,10 +286,10 @@ valueGroupTests = testGroup "value is a group" (map (\(f, n) -> testProperty n f
 genPositive :: Gen Integer
 genPositive = fmap fromIntegral (arbitrary :: Gen Word64)
 
-compactRoundTrip :: Gen Property
-compactRoundTrip = do
-  v <- genValue genPositive
-  pure (fmap fromCompact (toCompact v) === Just v)
+compactRoundTrip ::  Property
+compactRoundTrip = forAll (genValue genPositive) $ \v ->
+  counterexample (show $ toCompact v)
+  (Just v === fmap fromCompact (toCompact v))
 
 compactTest :: TestTree
 compactTest = testProperty "fromCompact . toCompact == id" compactRoundTrip
