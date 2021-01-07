@@ -36,8 +36,6 @@ module Cardano.Ledger.Alonzo.TxBody
         scriptHash
       ),
     AlonzoBody,
-    txins,
-    txinputs_fee,
   )
 where
 
@@ -496,17 +494,3 @@ instance
   FromCBOR (Annotator (TxBodyRaw era))
   where
   fromCBOR = pure <$> fromCBOR
-
--- ============================================================
--- From the specification, Figure 5 "Functions related to fees"
-
-txins :: AlonzoBody era => TxBody era -> Set (TxId (Crypto era), Word64)
-txins (TxBody {inputs = is}) = Set.foldl' accum Set.empty is
-  where
-    accum ans (TxInCompact idx index _) = Set.insert (idx, index) ans
-
-txinputs_fee :: AlonzoBody era => TxBody era -> Set (TxId (Crypto era), Word64)
-txinputs_fee (TxBody {inputs = is}) = Set.foldl' accum Set.empty is
-  where
-    accum ans (TxInCompact idx index (IsFee True)) = Set.insert (idx, index) ans
-    accum ans _ = ans
