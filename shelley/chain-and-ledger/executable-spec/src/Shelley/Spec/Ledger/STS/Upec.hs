@@ -15,7 +15,7 @@
 -- handles the epoch transitions.
 module Shelley.Spec.Ledger.STS.Upec where
 
-import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
+import Cardano.Ledger.Shelley.Constraints (ShelleyBased, UsesAuxiliary, UsesScript, UsesTxBody, UsesValue)
 import Control.Monad.Trans.Reader (asks)
 import Control.State.Transition
   ( Embed (..),
@@ -61,7 +61,14 @@ data UpecPredicateFailure era
 
 instance NoThunks (UpecPredicateFailure era)
 
-instance ShelleyBased era => STS (UPEC era) where
+instance
+  ( UsesAuxiliary era,
+    UsesTxBody era,
+    UsesScript era,
+    UsesValue era
+  ) =>
+  STS (UPEC era)
+  where
   type State (UPEC era) = UpecState era
   type Signal (UPEC era) = ()
   type Environment (UPEC era) = EpochState era
